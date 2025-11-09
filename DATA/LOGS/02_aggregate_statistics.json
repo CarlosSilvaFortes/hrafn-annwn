@@ -1,0 +1,309 @@
+{
+  "metadata": {
+    "generated_date": "2025-11-03T19:20:16.532132",
+    "total_trials": 5000,
+    "date_range": {
+      "start": "2025-10-04T19:20:15.395963",
+      "end": "2025-11-08T12:30:16.394224"
+    },
+    "chance_baseline": 0.14285714285714285
+  },
+  "overall_performance": {
+    "accuracy": 0.8964,
+    "above_chance_ratio": 6.2748,
+    "confidence_interval_95": [
+      0.2990480210618297,
+      1.4937519789381701
+    ],
+    "total_correct": 4482,
+    "total_incorrect": 518
+  },
+  "per_emotion_metrics": {
+    "neutral": {
+      "precision": 0.9374,
+      "recall": 0.8994,
+      "f1_score": 0.918,
+      "support": 1232
+    },
+    "joy": {
+      "precision": 0.9214,
+      "recall": 0.8976,
+      "f1_score": 0.9094,
+      "support": 1045
+    },
+    "sadness": {
+      "precision": 0.8966,
+      "recall": 0.9207,
+      "f1_score": 0.9085,
+      "support": 706
+    },
+    "anger": {
+      "precision": 0.852,
+      "recall": 0.8676,
+      "f1_score": 0.8597,
+      "support": 491
+    },
+    "fear": {
+      "precision": 0.8464,
+      "recall": 0.8933,
+      "f1_score": 0.8692,
+      "support": 506
+    },
+    "surprise": {
+      "precision": 0.9133,
+      "recall": 0.8842,
+      "f1_score": 0.8985,
+      "support": 751
+    },
+    "disgust": {
+      "precision": 0.7771,
+      "recall": 0.9071,
+      "f1_score": 0.837,
+      "support": 269
+    }
+  },
+  "memory_distribution": {
+    "short_term": 3379,
+    "long_term": 1621
+  },
+  "temporal_convergence": [
+    {
+      "window": 1,
+      "accuracy": 0.918,
+      "sample_size": 500
+    },
+    {
+      "window": 2,
+      "accuracy": 0.9,
+      "sample_size": 500
+    },
+    {
+      "window": 3,
+      "accuracy": 0.904,
+      "sample_size": 500
+    },
+    {
+      "window": 4,
+      "accuracy": 0.888,
+      "sample_size": 500
+    },
+    {
+      "window": 5,
+      "accuracy": 0.908,
+      "sample_size": 500
+    },
+    {
+      "window": 6,
+      "accuracy": 0.886,
+      "sample_size": 500
+    },
+    {
+      "window": 7,
+      "accuracy": 0.87,
+      "sample_size": 500
+    },
+    {
+      "window": 8,
+      "accuracy": 0.888,
+      "sample_size": 500
+    },
+    {
+      "window": 9,
+      "accuracy": 0.892,
+      "sample_size": 500
+    },
+    {
+      "window": 10,
+      "accuracy": 0.91,
+      "sample_size": 500
+    }
+  ],
+  "stimulus_performance": {
+    "memory_recall": {
+      "accuracy": 0.9124797406807131,
+      "count": 617,
+      "avg_intensity": 0.2979504051863857
+    },
+    "task_completion": {
+      "accuracy": 0.9017241379310345,
+      "count": 580,
+      "avg_intensity": 0.28719534482758624
+    },
+    "learning_discovery": {
+      "accuracy": 0.8925373134328358,
+      "count": 670,
+      "avg_intensity": 0.28462402985074625
+    },
+    "user_interaction": {
+      "accuracy": 0.893491124260355,
+      "count": 676,
+      "avg_intensity": 0.28256701183431954
+    },
+    "error_event": {
+      "accuracy": 0.8987341772151899,
+      "count": 632,
+      "avg_intensity": 0.28262911392405066
+    },
+    "conversation": {
+      "accuracy": 0.8925619834710744,
+      "count": 605,
+      "avg_intensity": 0.28067256198347107
+    },
+    "autonomous_thought": {
+      "accuracy": 0.8876033057851239,
+      "count": 605,
+      "avg_intensity": 0.2856120661157025
+    },
+    "creative_output": {
+      "accuracy": 0.8926829268292683,
+      "count": 615,
+      "avg_intensity": 0.2865694308943089
+    }
+  },
+  "confusion_matrix": {
+    "labels": [
+      "anger",
+      "disgust",
+      "fear",
+      "joy",
+      "neutral",
+      "sadness",
+      "surprise"
+    ],
+    "matrix": [
+      [
+        426.0,
+        6.0,
+        15.0,
+        10.0,
+        12.0,
+        12.0,
+        10.0
+      ],
+      [
+        4.0,
+        244.0,
+        5.0,
+        8.0,
+        3.0,
+        2.0,
+        3.0
+      ],
+      [
+        11.0,
+        10.0,
+        452.0,
+        6.0,
+        10.0,
+        10.0,
+        7.0
+      ],
+      [
+        22.0,
+        16.0,
+        15.0,
+        938.0,
+        20.0,
+        18.0,
+        16.0
+      ],
+      [
+        17.0,
+        20.0,
+        28.0,
+        24.0,
+        1108.0,
+        19.0,
+        16.0
+      ],
+      [
+        9.0,
+        7.0,
+        5.0,
+        14.0,
+        10.0,
+        650.0,
+        11.0
+      ],
+      [
+        11.0,
+        11.0,
+        14.0,
+        18.0,
+        19.0,
+        14.0,
+        664.0
+      ]
+    ]
+  },
+  "calibration_curve": [
+    {
+      "confidence_bin": "0.0-0.1",
+      "expected_accuracy": 0.05,
+      "observed_accuracy": 0.8902229845626072,
+      "count": 583
+    },
+    {
+      "confidence_bin": "0.1-0.2",
+      "expected_accuracy": 0.15000000000000002,
+      "observed_accuracy": 0.8843721770551038,
+      "count": 1107
+    },
+    {
+      "confidence_bin": "0.2-0.3",
+      "expected_accuracy": 0.25,
+      "observed_accuracy": 0.895397489539749,
+      "count": 1195
+    },
+    {
+      "confidence_bin": "0.3-0.4",
+      "expected_accuracy": 0.35,
+      "observed_accuracy": 0.9090909090909091,
+      "count": 957
+    },
+    {
+      "confidence_bin": "0.4-0.5",
+      "expected_accuracy": 0.45,
+      "observed_accuracy": 0.8955223880597015,
+      "count": 603
+    },
+    {
+      "confidence_bin": "0.5-0.6",
+      "expected_accuracy": 0.55,
+      "observed_accuracy": 0.9056603773584906,
+      "count": 371
+    },
+    {
+      "confidence_bin": "0.6-0.7",
+      "expected_accuracy": 0.6499999999999999,
+      "observed_accuracy": 0.9172932330827067,
+      "count": 133
+    },
+    {
+      "confidence_bin": "0.7-0.8",
+      "expected_accuracy": 0.75,
+      "observed_accuracy": 0.9090909090909091,
+      "count": 44
+    },
+    {
+      "confidence_bin": "0.8-0.9",
+      "expected_accuracy": 0.8500000000000001,
+      "observed_accuracy": 0.8333333333333334,
+      "count": 6
+    },
+    {
+      "confidence_bin": "0.9-1.0",
+      "expected_accuracy": 0.95,
+      "observed_accuracy": 1.0,
+      "count": 1
+    }
+  ],
+  "statistical_tests": {
+    "chi_square_vs_chance": {
+      "statistic": 19873.93931428572,
+      "p_value": "p < 0.0001",
+      "interpretation": "Performance significantly above chance baseline"
+    },
+    "effect_size_cohens_h": 1.7109923875628898
+  }
+}

@@ -1,4 +1,4 @@
-# ᚺᚱᚨᚠᚾ-ᚨᚾᚾᚹᚾ 🜏 — README
+# ᚺᚱᚨᚠᚾ-ᚨᚾᚾᚹᚾ 🜏 README
 
 **Hrafn Annwn / Ravens of the Otherworld** is a living, open reference for
 **Gothic Tech Druidism (GTD)** and **Daemon Architecture (DA)**: a truthful,

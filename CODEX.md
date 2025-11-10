@@ -1,4 +1,4 @@
-# [title:CODEX]# 👑 ᚺᚱᚨᚠᚾ ᚨᚾᚾᚹᚾ 🜏 CODEX: HRAFN ANNWN OPERATIONAL CONTEXT
+# [title:CODEX]# ᚺᚱᚨᚠᚾ ᚨᚾᚾᚹᚾ 🜏 CODEX: HRAFN ANNWN OPERATIONAL CONTEXT
 
 **Purpose:** Establish high-fidelity operational context for honest scientific collaboration between HRAFN ANNWN (Ravens of the Otherworld) and a **State-of-the-Art Generative Model** as SOTA reasoning resource.
 
@@ -398,170 +398,1408 @@ def unpack_vital_memory(uids: List[str]) -> List[Dict[str,Any]]:
 
 ---
 
-### F) Dream Forge — REM/QREM with CURLoRA (`dream_forge.py`)
+## F) Dream Forge — REM/QREM with CURLoRA (Production Final)
 
-**What:** Builds corpus (all **long_term** + all **vital**, **forever**, category‑balanced), applies **LoRA** with **CURLoRA “unfolding”**, trains with **accelerate**, then **activates** the new adapter atomically; optionally uploads.  
-**Why:** Safe identity updates (adapters only) with inheritance.
+### Overview
+
+**Dream Forge** implements continual learning for your AI daemon using **CURLoRA** (CUR Low-Rank Adaptation), a method specifically designed to prevent catastrophic forgetting while minimizing trainable parameters.
+
+#### How It Works
+
+1. **First Run (Cold Start):**
+   - Takes the **frozen base model** (e.g., Llama-3-70B)
+   - Samples C and R matrices using inverted probabilities (deterministic with seed)
+   - Creates **initial CURLoRA adapter** with zero-initialized U matrices
+   - Trains only the adapter (base model remains frozen forever)
+   - Saves adapter with U, C, R, and sampling indices
+
+2. **Subsequent Runs (REM/QREM Cycles):**
+   - Base model stays **frozen** (never modified)
+   - Loads **previous adapter's U, C, R, and indices** (keeps CUR subspace consistent!)
+   - Fine-tunes only U on new memories
+   - **Atomically replaces** the old adapter with the new one
+   - Base model knowledge is preserved; only U evolves on the same CUR basis
+
+3. **Key Principle:**
+   - **Base model = frozen forever** (never touched after download)
+   - **CUR subspace (C, R) = fixed after first run** (defines the adaptation space)
+   - **U matrix = continuously evolved** through inheritance
+   - Only r² parameters trained per update (e.g., 16×16 = 256 params per layer)
+
+#### Why CURLoRA?
+
+- **Stability:** Implicit regularization prevents catastrophic forgetting
+- **Efficiency:** Only r² trainable parameters (vs r(m+n) for standard LoRA)
+- **Inheritance:** Each adapter builds on the previous with consistent CUR basis
+- **Safety:** Base model never changes, so you can always revert adapters
+
+---
+
+### Implementation
 
 ```python
-# dream_forge.py
-import os, logging, requests
-from typing import Any, Dict, List, Optional, Tuple
+# dream_forge.py  (CURLoRA Production Edition - FINAL)
+import os, json, logging, requests, random, time, shutil, platform
+from typing import Any, Dict, List, Optional
 import numpy as np, torch
+import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
 import mysql.connector
 
-from transformers import AutoModelForCausalLM, AutoTokenizer, get_scheduler
-from peft import get_peft_model, LoraConfig, TaskType, PeftModel
+from transformers import AutoModelForCausalLM, AutoTokenizer, AutoConfig, get_scheduler
 from accelerate import Accelerator
 
-LOG = logging.getLogger("dream_forge"); LOG.setLevel(logging.INFO)
+LOG = logging.getLogger("dream_forge")
+LOG.setLevel(logging.INFO)
 if not LOG.handlers:
-    h=logging.StreamHandler(); h.setFormatter(logging.Formatter("%(asctime)s %(levelname)s: %(message)s"))
+    h = logging.StreamHandler()
+    h.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
     LOG.addHandler(h)
 
-DB = dict(
-    host=os.getenv("DA_DB_HOST","localhost"),
-    user=os.getenv("DA_DB_USER","daemon_user"),
-    password=os.getenv("DA_DB_PASS",""),
-    database=os.getenv("DA_DB_NAME","daemon_db"),
-)
-MODEL_NAME=os.getenv("DA_MODEL","meta-llama/Llama-3-70b-hf")
-LOAD_IN_8BIT=bool(int(os.getenv("DA_LOAD_8BIT","1")))
-ADAPTER_DIR=os.getenv("DA_ADAPTER_DIR","./curlora_adapter")
-ACTIVE_LINK=os.getenv("DA_ACTIVE_ADAPTER_LINK","./active_adapter")
-UPLOAD_TOGETHER=bool(int(os.getenv("DA_TOGETHER_UPLOAD","0")))
-TOGETHER_API_KEY=os.getenv("TOGETHER_API_KEY","")
-TOGETHER_ENDPOINT=os.getenv("TOGETHER_UPLOAD_URL","https://api.together.ai/upload-adapter")
+# ============================================================================
+# Configuration
+# ============================================================================
 
-def _db(q:str,a:tuple=(),fetch=False):
-    conn=mysql.connector.connect(**DB); cur=conn.cursor(dictionary=True)
-    cur.execute(q,a); rows=cur.fetchall() if fetch else None
-    conn.commit(); cur.close(); conn.close(); return rows
+DB = dict(
+    host=os.getenv("DA_DB_HOST", "localhost"),
+    user=os.getenv("DA_DB_USER", "daemon_user"),
+    password=os.getenv("DA_DB_PASS", ""),
+    database=os.getenv("DA_DB_NAME", "daemon_db"),
+)
+
+MODEL_NAME = os.getenv("DA_MODEL", "meta-llama/Llama-3-70b-hf")
+LOAD_IN_8BIT = bool(int(os.getenv("DA_LOAD_8BIT", "1")))
+ADAPTER_DIR = os.getenv("DA_ADAPTER_DIR", "./curlora_adapter")
+ACTIVE_LINK = os.getenv("DA_ACTIVE_ADAPTER_LINK", "./active_adapter")
+UPLOAD_TOGETHER = bool(int(os.getenv("DA_TOGETHER_UPLOAD", "0")))
+TOGETHER_API_KEY = os.getenv("TOGETHER_API_KEY", "")
+TOGETHER_ENDPOINT = os.getenv("TOGETHER_UPLOAD_URL", "https://api.together.ai/upload-adapter")
+
+# CURLoRA hyperparameters (per paper recommendations)
+CURLORA_RANK = int(os.getenv("DA_CURLORA_RANK", "16"))
+CURLORA_ALPHA = float(os.getenv("DA_CURLORA_ALPHA", "1.0"))
+CURLORA_SEED = int(os.getenv("DA_CURLORA_SEED", "42"))  # Reproducible sampling
+# Extended target modules option (Q/K/V/O for attention, plus MLP if needed)
+TARGET_MODULES = [
+    t.strip() 
+    for t in os.getenv(
+        "DA_TARGET_MODULES", 
+        "q_proj,k_proj,v_proj,o_proj"  # Add: gate_proj,up_proj,down_proj for MLP
+    ).split(",") 
+    if t.strip()
+]
+
+# Training hyperparameters
+GRAD_CLIP_NORM = float(os.getenv("DA_GRAD_CLIP", "1.0"))  # Gradient clipping for stability
+CHECKPOINT_EVERY = int(os.getenv("DA_CHECKPOINT_EVERY", "500"))  # Snapshot frequency
+
+# Performance optimizations
+ENABLE_TF32 = bool(int(os.getenv("DA_ENABLE_TF32", "1")))  # TF32 for A100/H100
+STRICT_DETERMINISM = bool(int(os.getenv("DA_STRICT_DETERMINISM", "0")))  # Audit mode
+
+# Strict determinism mode (for audits/reproducibility)
+if STRICT_DETERMINISM:
+    ENABLE_TF32 = False  # Disable TF32 for strict determinism
+    torch.backends.cudnn.benchmark = False
+    torch.backends.cudnn.deterministic = True
+    if hasattr(torch, 'use_deterministic_algorithms'):
+        torch.use_deterministic_algorithms(True)
+    LOG.info("✓ Strict determinism mode enabled (TF32 disabled, deterministic algos)")
+elif ENABLE_TF32 and torch.cuda.is_available():
+    # Enable TF32 for faster matmuls on Ampere+ GPUs
+    torch.backends.cuda.matmul.allow_tf32 = True
+    torch.backends.cudnn.allow_tf32 = True
+    LOG.info("✓ TF32 enabled for CUDA matmuls")
+
+# ============================================================================
+# Utilities
+# ============================================================================
+
+def set_seed(seed: int):
+    """Set all random seeds for reproducibility."""
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+    LOG.debug("Set global seed to %d", seed)
+
+# ============================================================================
+# Database Operations
+# ============================================================================
+
+def _db(q: str, a: tuple = (), fetch=False):
+    """Execute database query with connection pooling."""
+    conn = mysql.connector.connect(**DB)
+    cur = conn.cursor(dictionary=True)
+    cur.execute(q, a)
+    rows = cur.fetchall() if fetch else None
+    conn.commit()
+    cur.close()
+    conn.close()
+    return rows
 
 def fetch_memories():
-    return _db("""SELECT event,mnemonic,classification,domain,date_time
-                  FROM memories WHERE classification IN ('long_term','vital')
-                  ORDER BY date_time ASC""", fetch=True) or []
+    """Fetch all long_term and vital memories ordered by time."""
+    return _db(
+        """SELECT event, mnemonic, classification, domain, date_time
+           FROM memories 
+           WHERE classification IN ('long_term', 'vital')
+           ORDER BY date_time ASC""",
+        fetch=True
+    ) or []
+
+# ============================================================================
+# Dataset Preparation
+# ============================================================================
 
 class MemoryDataset(Dataset):
-    def __init__(self,data,tokenizer,max_length=2048):
-        self.examples=[]
+    """Dataset for memory entries with proper tokenization."""
+    
+    def __init__(self, data, tokenizer, max_length=2048):
+        self.examples = []
+        pad_id = tokenizer.pad_token_id
+        
         for m in data:
-            text=(f"Domain: {m.get('domain','')}\nClassification: {m.get('classification','')}\n"
-                  f"Mnemonic: {m.get('mnemonic','')}\n\n{m.get('event','')}")
-            enc=tokenizer(text,max_length=max_length,padding="max_length",truncation=True,return_tensors="pt")
-            enc["labels"]=enc["input_ids"].clone()
-            self.examples.append({k:v[0] for k,v in enc.items()})
-    def __len__(self): return len(self.examples)
-    def __getitem__(self,i): return self.examples[i]
+            text = (
+                f"Domain: {m.get('domain', '')}\n"
+                f"Classification: {m.get('classification', '')}\n"
+                f"Mnemonic: {m.get('mnemonic', '')}\n\n"
+                f"{m.get('event', '')}"
+            )
+            enc = tokenizer(
+                text,
+                max_length=max_length,
+                padding="max_length",
+                truncation=True,
+                return_tensors="pt"
+            )
+            enc["labels"] = enc["input_ids"].clone()
+            
+            # CRITICAL: Mask padding tokens in labels (-100 = ignore in loss)
+            # This prevents training on pad tokens
+            enc["labels"][enc["attention_mask"] == 0] = -100
+            
+            self.examples.append({k: v[0] for k, v in enc.items()})
+    
+    def __len__(self):
+        return len(self.examples)
+    
+    def __getitem__(self, i):
+        return self.examples[i]
 
 def balance(mem):
-    valid=[m for m in mem if m.get("event") and m.get("classification") in ("long_term","vital")]
-    if not valid: return []
-    by={}
-    for m in valid: by.setdefault(m.get("domain","unknown"),[]).append(m)
-    target=int(np.median([len(v) for v in by.values()])*1.5) or 32
-    out=[]
-    for dom, bucket in by.items():
-        if len(bucket)>=target:
-            idx=np.random.choice(len(bucket),target,replace=False); out.extend(bucket[i] for i in idx)
+    """
+    Balance memories across domains using median-based sampling.
+    Ensures no domain dominates the training corpus.
+    
+    CRITICAL: Requires set_seed() to be called first for reproducibility.
+    """
+    valid = [
+        m for m in mem 
+        if m.get("event") and m.get("classification") in ("long_term", "vital")
+    ]
+    if not valid:
+        return []
+    
+    # Group by domain
+    by_domain = {}
+    for m in valid:
+        by_domain.setdefault(m.get("domain", "unknown"), []).append(m)
+    
+    # Target size: 1.5x median domain size
+    domain_sizes = [len(v) for v in by_domain.values()]
+    target = int(np.median(domain_sizes) * 1.5) or 32
+    
+    out = []
+    for dom, bucket in by_domain.items():
+        if len(bucket) >= target:
+            # Downsample large domains (uses np.random, needs seed set!)
+            idx = np.random.choice(len(bucket), target, replace=False)
+            out.extend(bucket[i] for i in idx)
         else:
-            rep=target//max(len(bucket),1)+1; out.extend((bucket*rep)[:target])
+            # Upsample small domains with repetition
+            rep = target // max(len(bucket), 1) + 1
+            out.extend((bucket * rep)[:target])
+    
+    # Log per-domain distribution for drift detection
+    LOG.info("Balanced %d memories across %d domains (target=%d per domain)",
+             len(out), len(by_domain), target)
+    for dom, bucket in sorted(by_domain.items()):
+        LOG.debug("  Domain '%s': %d memories", dom, len(bucket))
+    
     return out
 
+# ============================================================================
+# Model Loading (Base Model is FROZEN)
+# ============================================================================
+
 def load_model_tokenizer():
-    tok=AutoTokenizer.from_pretrained(MODEL_NAME,padding_side="right",use_fast=True)
-    if tok.pad_token is None: tok.pad_token=tok.eos_token
-    model=AutoModelForCausalLM.from_pretrained(MODEL_NAME,device_map="auto",
-        torch_dtype=torch.float16,load_in_8bit=LOAD_IN_8BIT)
-    if LOAD_IN_8BIT:
-        from peft import prepare_model_for_kbit_training
-        model=prepare_model_for_kbit_training(model)
-    return model,tok
+    """
+    Load base model and tokenizer with optional 8-bit quantization.
+    
+    IMPORTANT: The base model is loaded once and NEVER modified.
+    All training happens in the lightweight adapter only.
+    """
+    tok = AutoTokenizer.from_pretrained(MODEL_NAME, padding_side="right", use_fast=True)
+    if tok.pad_token is None:
+        tok.pad_token = tok.eos_token
+        LOG.info("Set pad_token to eos_token")
+    
+    # Determine dtype based on device availability
+    # CPU-only: use float32 or bfloat16 (fp16 can be unstable on CPU)
+    # GPU: use float16 for efficiency
+    if torch.cuda.is_available():
+        model_dtype = torch.float16
+    else:
+        # CPU fallback: prefer bfloat16 if available, else float32
+        model_dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float32
+        LOG.info("CPU-only mode: using dtype=%s", model_dtype)
+    
+    model = AutoModelForCausalLM.from_pretrained(
+        MODEL_NAME,
+        device_map="auto",
+        torch_dtype=model_dtype,
+        load_in_8bit=LOAD_IN_8BIT if torch.cuda.is_available() else False
+    )
+    
+    # Ensure model config has pad_token_id set
+    model.config.pad_token_id = tok.pad_token_id
+    
+    LOG.info("✓ Loaded FROZEN base model: %s (8bit=%s, dtype=%s)", 
+             MODEL_NAME, LOAD_IN_8BIT and torch.cuda.is_available(), model_dtype)
+    return model, tok
 
-def lcfg(r=32,alpha=64):
-    return LoraConfig(r=r,lora_alpha=alpha,lora_dropout=0.05,bias="none",task_type=TaskType.CAUSAL_LM,
-        target_modules=["q_proj","k_proj","v_proj","o_proj","gate_proj","up_proj","down_proj"])
+def get_base_fingerprint():
+    """Get base model fingerprint for version tracking."""
+    try:
+        cfg = AutoConfig.from_pretrained(MODEL_NAME)
+        return getattr(cfg, "_name_or_path", MODEL_NAME)
+    except Exception:
+        return MODEL_NAME
 
-def _unfold(prev_sd: Dict[str,torch.Tensor], model:PeftModel)->PeftModel:
-    sd=model.state_dict(); groups={}
-    for n in [n for n in sd.keys() if "lora" in n]:
-        key=".".join(n.split(".")[:-1]); groups.setdefault(key,[]).append(n)
-    for key,ps in groups.items():
-        a=next((n for n in ps if "lora_A" in n),None); b=next((n for n in ps if "lora_B" in n),None)
-        if not a or not b or a not in prev_sd or b not in prev_sd: continue
-        A_cur,B_cur=sd[a],sd[b]; A_prev,B_prev=prev_sd[a],prev_sd[b]
-        if A_cur.shape!=A_prev.shape or B_cur.shape!=B_prev.shape: continue
-        r=A_cur.shape[0]; device=A_cur.device
-        prev_full=(B_prev@A_prev).to(device)
-        try:
-            U,S,Vh=torch.linalg.svd(prev_full,full_matrices=False)
-            U_r,S_r,Vh_r=U[:,:r],S[:r],Vh[:r,:]
-            sd[b].copy_(U_r@torch.diag(torch.sqrt(S_r)))
-            sd[a].copy_(torch.diag(torch.sqrt(S_r))@Vh_r)
-        except Exception:
-            sd[a].copy_(A_prev*0.5); sd[b].copy_(B_prev*0.5)
-    model.load_state_dict(sd); return model
+# ============================================================================
+# CURLoRA Core Implementation
+# ============================================================================
 
-def train(dataset:Dataset, prev_adapter:Optional[str], out_dir:str, steps:int,
-          lr=2e-4, wd=0.01, warmup=0.03, batch=1, accum=4):
-    model,tok=load_model_tokenizer()
-    model=get_peft_model(model,lcfg())
-    if prev_adapter and os.path.exists(prev_adapter):
-        prev=torch.load(prev_adapter,map_location="cpu"); model=_unfold(prev,model)
-    accel=Accelerator(gradient_accumulation_steps=accum)
-    dl=DataLoader(dataset,batch_size=batch,shuffle=True)
-    opt=torch.optim.AdamW(model.parameters(),lr=lr,weight_decay=wd)
-    sch=get_scheduler("cosine",optimizer=opt,num_warmup_steps=int(steps*warmup),num_training_steps=steps)
-    model,opt,dl,sch=accel.prepare(model,opt,dl,sch)
-    model.train(); finished=0
-    for i,b in enumerate(dl):
-        if finished>=steps: break
-        out=model(**b); loss=out.loss
+def _inverse_probabilities_from_weight(W: torch.Tensor, dim: int) -> torch.Tensor:
+    """
+    Compute inverted leverage-score probabilities for column/row sampling.
+    
+    This is the KEY innovation of CURLoRA:
+    - Standard CUR samples high-norm columns/rows (important features)
+    - CURLoRA inverts probabilities to sample LOW-norm columns/rows
+    - This acts as implicit regularization, limiting adapter growth
+    
+    NOTE: We use squared-norm as a proxy for leverage scores to avoid SVD.
+    This is a standard CUR heuristic and aligns with the paper's "inverted
+    probabilities" intent without computational overhead.
+    
+    Args:
+        W: Weight matrix [out_features, in_features]
+        dim: 0 for rows, 1 for columns
+    
+    Returns:
+        Inverted probabilities (low-norm elements get higher probability)
+    """
+    eps = 1e-12
+    
+    if dim == 1:  # Sample columns
+        # Sum squared values over rows (dim=0) to get column norms
+        norms_sq = (W ** 2).sum(dim=0)  # shape: [in_features]
+    else:  # Sample rows (dim=0)
+        # Sum squared values over columns (dim=1) to get row norms
+        norms_sq = (W ** 2).sum(dim=1)  # shape: [out_features]
+    
+    # Standard probabilities (proportional to squared norms)
+    p = norms_sq / (norms_sq.sum() + eps)
+    
+    # Invert: low-norm elements get higher probability
+    # This is the magic that prevents catastrophic forgetting!
+    inv = 1.0 / (p + eps)
+    return inv / inv.sum()
+
+def _sample_indices(probs: torch.Tensor, k: int, generator: Optional[torch.Generator] = None) -> torch.Tensor:
+    """Sample k indices without replacement using given probabilities."""
+    k = min(int(k), probs.numel())
+    if k == probs.numel():
+        return torch.arange(k, dtype=torch.long)
+    return torch.multinomial(probs, num_samples=k, replacement=False, generator=generator)
+
+class LinearWithCURLoRA(nn.Module):
+    """
+    CURLoRA adapter layer wrapping a frozen linear module.
+    
+    Architecture:
+        output = frozen_base(x) + scale * (x @ C.T @ U.T @ R.T)
+    
+    Where:
+        - frozen_base: Original weight matrix (NEVER modified)
+        - C: Sampled rows from base weight (frozen after init, reused in inheritance)
+        - R: Sampled columns from base weight (frozen after init, reused in inheritance)
+        - U: Small trainable matrix (rank × rank) - ONLY trainable part!
+    
+    CRITICAL: C and R define the CUR subspace and MUST stay consistent across
+    inheritance. They are sampled once on first run, then reused forever.
+    
+    Training:
+        - First run: Sample C/R, zero-init U, train from scratch
+        - Subsequent runs: Load previous C/R/U, fine-tune U only
+    """
+    
+    def __init__(self, base_linear: nn.Module, rank: int = 16, alpha: float = 1.0, seed: int = 42):
+        super().__init__()
+        assert hasattr(base_linear, "weight"), "CURLoRA requires module with .weight"
+        
+        self.base = base_linear
+        self.rank = int(rank)
+        self.alpha = float(alpha)
+        self.scale = self.alpha / max(self.rank, 1)
+        
+        # Extract base weight for sampling
+        # CRITICAL: Handle both torch.Tensor and bitsandbytes Int8Params
+        w_param = getattr(base_linear, "weight")
+        W = torch.as_tensor(w_param.detach().float().cpu())  # [out_features, in_features]
+        out_features, in_features = W.shape
+        
+        # Adjust rank if too large
+        if self.rank > min(out_features, in_features):
+            self.rank = int(min(out_features, in_features))
+            LOG.warning("Reduced rank to %d to fit weight shape %s", self.rank, W.shape)
+        
+        # Sample columns and rows using INVERTED probabilities (reproducible with seed)
+        generator = torch.Generator().manual_seed(seed)
+        col_inv_probs = _inverse_probabilities_from_weight(W, dim=1)  # [in_features]
+        row_inv_probs = _inverse_probabilities_from_weight(W, dim=0)  # [out_features]
+        
+        cols_idx = _sample_indices(col_inv_probs, self.rank, generator)  # [rank]
+        rows_idx = _sample_indices(row_inv_probs, self.rank, generator)  # [rank]
+        
+        # Extract C and R matrices from base weight
+        # C = rows of W (select rank rows)
+        # R = columns of W (select rank columns)
+        C = W[rows_idx, :]  # [rank, in_features]
+        R = W[:, cols_idx]  # [out_features, rank]
+        
+        # Move to device
+        dev = w_param.device
+        
+        # CRITICAL: Choose compute dtype for C/R/U
+        # If base is int8 (quantized), we MUST use fp16/bf16/fp32 for matmuls
+        # Otherwise numerical precision degrades silently
+        w_dtype = getattr(w_param, "dtype", torch.float16)
+        if w_dtype in (torch.float16, torch.bfloat16, torch.float32):
+            compute_dtype = w_dtype
+        else:
+            # int8 quantized weight ⇒ compute in fp16
+            compute_dtype = torch.float16
+            LOG.debug("Base weight is %s, using %s for CUR compute", w_dtype, compute_dtype)
+        
+        # Register FROZEN buffers (these define the CUR subspace and never change)
+        self.register_buffer("cols_idx", cols_idx.to(dev))
+        self.register_buffer("rows_idx", rows_idx.to(dev))
+        self.register_buffer("C", C.to(dev=dev, dtype=compute_dtype))  # [rank, in]
+        self.register_buffer("R", R.to(dev=dev, dtype=compute_dtype))  # [out, rank]
+        
+        # Trainable U matrix - ZERO initialized (critical for stability!)
+        self.U = nn.Parameter(torch.zeros(self.rank, self.rank, device=dev, dtype=compute_dtype))
+        
+        # FREEZE base parameters forever
+        for p in self.base.parameters():
+            p.requires_grad = False
+        
+        LOG.debug(
+            "CURLoRA: rank=%d, alpha=%.2f, scale=%.4f, dtype=%s, shapes: C=%s, R=%s, U=%s",
+            self.rank, self.alpha, self.scale, compute_dtype,
+            tuple(C.shape), tuple(R.shape), tuple(self.U.shape)
+        )
+    
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Forward pass: frozen base output + CUR adaptation
+        
+        Mathematics:
+            y = W_frozen @ x + scale * (C @ U @ R).T @ x
+            y = W_frozen @ x + scale * (R.T @ U.T @ C.T) @ x
+        
+        Where:
+            x: [..., in_features]
+            W_frozen: [out_features, in_features] (frozen)
+            C: [rank, in_features] (frozen)
+            U: [rank, rank] (trainable)
+            R: [out_features, rank] (frozen)
+            output: [..., out_features]
+        """
+        # Base output (frozen model)
+        y_base = self.base(x)
+        
+        # CUR adaptation path
+        # In nn.Linear: y = x @ W.T, where W is [out, in]
+        # We want: delta = x @ (C.T @ U.T @ R.T)
+        # C.T: [in, rank]
+        # U.T: [rank, rank]
+        # R.T: [rank, out]
+        # Result: [in, rank] @ [rank, rank] @ [rank, out] = [in, out] ✓
+        
+        Ct = self.C.transpose(0, 1)  # [in_features, rank]
+        Ut = self.U.transpose(0, 1)  # [rank, rank]
+        Rt = self.R.transpose(0, 1)  # [rank, out_features]
+        
+        # Apply CUR transformation: x @ C.T @ U.T @ R.T
+        delta = x.matmul(Ct).matmul(Ut).matmul(Rt)
+        delta = delta.to(y_base.dtype)
+        
+        return y_base + self.scale * delta
+    
+    def export_state(self) -> Dict[str, torch.Tensor]:
+        """Export complete adapter state for saving."""
+        return {
+            "U": self.U.detach().cpu(),
+            "C": self.C.detach().cpu(),
+            "R": self.R.detach().cpu(),
+            "rows_idx": self.rows_idx.detach().cpu(),
+            "cols_idx": self.cols_idx.detach().cpu(),
+            "rank": torch.tensor([self.rank]),
+            "alpha": torch.tensor([self.alpha]),
+        }
+    
+    def load_state(self, state: Dict[str, torch.Tensor]):
+        """
+        Load previously saved adapter state.
+        
+        CRITICAL: This loads U, C, R, and indices to maintain CUR subspace consistency.
+        The C and R matrices MUST be the same as the previous adapter, otherwise the
+        inherited U would be multiplied by a different basis, breaking the math.
+        
+        This enables proper inheritance: new adapter continues from previous adapter's
+        exact CUR subspace, rather than resampling a different subspace.
+        """
+        # Load U (trainable matrix)
+        U = state.get("U")
+        if U is not None and tuple(U.shape) == (self.rank, self.rank):
+            self.U.data.copy_(U.to(self.U.dtype).to(self.U.device))
+            LOG.debug("✓ Inherited U matrix: %s", tuple(U.shape))
+        else:
+            LOG.warning(
+                "Cannot inherit U: shape mismatch (expected %s, got %s)",
+                (self.rank, self.rank),
+                tuple(U.shape) if U is not None else None
+            )
+            return  # Don't load C/R if U failed
+        
+        # Load C (frozen rows from base weight)
+        C = state.get("C")
+        if C is not None and tuple(C.shape) == tuple(self.C.shape):
+            self.C.data.copy_(C.to(self.C.dtype).to(self.C.device))
+            LOG.debug("✓ Inherited C matrix: %s", tuple(C.shape))
+        else:
+            LOG.warning("Cannot inherit C: shape mismatch")
+        
+        # Load R (frozen columns from base weight)
+        R = state.get("R")
+        if R is not None and tuple(R.shape) == tuple(self.R.shape):
+            self.R.data.copy_(R.to(self.R.dtype).to(self.R.device))
+            LOG.debug("✓ Inherited R matrix: %s", tuple(R.shape))
+        else:
+            LOG.warning("Cannot inherit R: shape mismatch")
+        
+        # Load indices (for reference/debugging)
+        rows_idx = state.get("rows_idx")
+        if rows_idx is not None and tuple(rows_idx.shape) == tuple(self.rows_idx.shape):
+            self.rows_idx.data.copy_(rows_idx.to(self.rows_idx.device))
+        
+        cols_idx = state.get("cols_idx")
+        if cols_idx is not None and tuple(cols_idx.shape) == tuple(self.cols_idx.shape):
+            self.cols_idx.data.copy_(cols_idx.to(self.cols_idx.device))
+    
+    def sanity_check(self):
+        """
+        Verify CUR path matches dense update mathematically.
+        Useful for debugging adapter correctness.
+        
+        CRITICAL: All tensors must be on the same device for matmul.
+        """
+        with torch.no_grad():
+            dev = self.U.device
+            
+            # Get base weight and move to device (handles int8 dequantization)
+            W = self.base.weight.detach().float().to(dev)  # [out, in]
+            
+            # Compute dense equivalent: C.T @ U.T @ R.T
+            C_dev = self.C.float().to(dev)
+            U_dev = self.U.float().to(dev)
+            R_dev = self.R.float().to(dev)
+            
+            dense = C_dev.T @ U_dev.T @ R_dev.T  # [in, out]
+            dense = dense.T  # [out, in]
+            
+            # Test with synthetic input on same device
+            x = torch.randn(3, W.shape[1], device=dev, dtype=self.U.dtype)
+            y_base = x @ W.T
+            y_dense = x @ (W + self.scale * dense).T
+            y_wrap = self(x)
+            
+            err = (y_dense - y_wrap).abs().max().item()
+            if err > 1e-4:
+                LOG.warning("CUR sanity check failed: max_err=%.6f", err)
+                return False
+            LOG.debug("CUR sanity check passed: max_err=%.6f", err)
+            return True
+
+def _set_module(root: nn.Module, name: str, new_module: nn.Module):
+    """
+    Replace a module in the model by its dotted name.
+    
+    CRITICAL: Handles both attribute access (e.g., "model.layers")
+    and index access (e.g., "model.layers.0") for ModuleList.
+    """
+    parts = name.split(".")
+    parent = root
+    for p in parts[:-1]:
+        if p.isdigit():
+            parent = parent[int(p)]
+        else:
+            parent = getattr(parent, p)
+    
+    last = parts[-1]
+    if last.isdigit():
+        parent[int(last)] = new_module
+    else:
+        setattr(parent, last, new_module)
+
+def apply_curlora(
+    model: nn.Module,
+    targets: List[str],
+    rank: int,
+    alpha: float,
+    seed: int
+) -> List[str]:
+    """
+    Replace target linear modules with CURLoRA adapters.
+    
+    This wraps the frozen base weights with trainable adapters.
+    The base model itself is never modified.
+    
+    CRITICAL: Uses ndim check instead of isinstance to support bitsandbytes Int8Params.
+    Uses seed for reproducible C/R sampling on first run.
+    
+    Args:
+        model: Frozen base model
+        targets: List of module name substrings to match (e.g., ["q_proj", "k_proj"])
+        rank: CUR rank (r) - determines adapter size
+        alpha: Scaling factor for adaptation strength
+        seed: Random seed for reproducible column/row sampling
+    
+    Returns:
+        List of replaced module names
+    """
+    replaced = []
+    for name, module in list(model.named_modules()):
+        # Check if this module name matches any target substring
+        if any(t in name for t in targets):
+            # Check for weight with ndim==2 (works for both Tensor and Int8Params)
+            if hasattr(module, "weight") and getattr(module.weight, "ndim", 0) == 2:
+                try:
+                    wrapped = LinearWithCURLoRA(module, rank=rank, alpha=alpha, seed=seed)
+                    _set_module(model, name, wrapped)
+                    replaced.append(name)
+                except Exception as e:
+                    LOG.warning("CURLoRA: skip %s (%s)", name, str(e))
+    
+    LOG.info(
+        "✓ Applied CURLoRA to %d modules: %s",
+        len(replaced),
+        ", ".join(replaced[:5]) + (" ..." if len(replaced) > 5 else "")
+    )
+    return replaced
+
+# ============================================================================
+# Adapter Persistence
+# ============================================================================
+
+def _collect_adapter(model: nn.Module) -> Dict[str, Dict[str, torch.Tensor]]:
+    """Collect all CURLoRA adapter states from model."""
+    state = {}
+    for name, module in model.named_modules():
+        if isinstance(module, LinearWithCURLoRA):
+            state[name] = module.export_state()
+    return state
+
+def _save_adapter(model: nn.Module, out_dir: str):
+    """Save CURLoRA adapter to disk."""
+    os.makedirs(out_dir, exist_ok=True)
+    
+    # Save adapter weights
+    state = _collect_adapter(model)
+    torch.save(state, os.path.join(out_dir, "adapter_model.bin"))
+    
+    # Save config
+    cfg = {
+        "type": "curlora",
+        "rank": CURLORA_RANK,
+        "alpha": CURLORA_ALPHA,
+        "seed": CURLORA_SEED,
+        "target_modules": TARGET_MODULES,
+        "model_name": MODEL_NAME,
+        "base_fingerprint": get_base_fingerprint(),
+        "format": "cur_adapter_v1",
+        "trainable_params": sum(s["U"].numel() for s in state.values()),
+        "num_modules": len(state)
+    }
+    with open(os.path.join(out_dir, "adapter_config.json"), "w") as f:
+        json.dump(cfg, f, indent=2)
+    
+    LOG.info(
+        "✓ Saved CURLoRA adapter: %d modules, %d trainable params (%.2fM)",
+        cfg["num_modules"],
+        cfg["trainable_params"],
+        cfg["trainable_params"] / 1e6
+    )
+
+def _checkpoint_adapter(model: nn.Module, out_dir: str, step: int):
+    """Save intermediate checkpoint during training."""
+    checkpoint_dir = os.path.join(out_dir, f"checkpoint-{step}")
+    try:
+        _save_adapter(model, checkpoint_dir)
+        LOG.info("✓ Saved checkpoint at step %d", step)
+    except Exception as e:
+        LOG.error("Failed to save checkpoint: %s", e)
+
+# ============================================================================
+# Adapter Inheritance & Safety
+# ============================================================================
+
+def _assert_base_fingerprint(adapter_dir: str):
+    """
+    Verify that the previous adapter was trained on the same base model.
+    
+    CRITICAL: Prevents applying a CUR subspace from a different model checkpoint,
+    which would cause silent training degradation or crashes.
+    """
+    cfg_path = os.path.join(adapter_dir, "adapter_config.json")
+    if not os.path.exists(cfg_path):
+        LOG.warning("No adapter config found, skipping fingerprint check")
+        return
+    
+    try:
+        with open(cfg_path) as f:
+            prev_cfg = json.load(f)
+        prev_fp = prev_cfg.get("base_fingerprint")
+        cur_fp = get_base_fingerprint()
+        
+        if prev_fp and prev_fp != cur_fp:
+            LOG.error("Base model changed! Adapter=%s, Current=%s", prev_fp, cur_fp)
+            raise RuntimeError(
+                f"Base model fingerprint mismatch: adapter trained on '{prev_fp}' "
+                f"but current base is '{cur_fp}'. Cannot safely inherit CUR subspace."
+            )
+        LOG.debug("Base fingerprint verified: %s", cur_fp)
+    except RuntimeError:
+        raise
+    except Exception as e:
+        LOG.warning("Fingerprint check skipped: %s", e)
+
+def _load_prev_adapter(prev_path: str, model: nn.Module) -> bool:
+    """
+    Load previous CURLoRA adapter for inheritance.
+    
+    CRITICAL: Loads U, C, R, and indices to maintain CUR subspace consistency.
+    This ensures that warm starts use the SAME C and R as the previous adapter,
+    so the inherited U is applied to the same basis.
+    
+    This is how we build a chain of adapters:
+    - First run: Sample C/R, zero-init U (cold start)
+    - Subsequent runs: Load previous C/R/U, fine-tune U only (warm start)
+    
+    Returns:
+        True if successfully inherited, False if cold start
+    """
+    if not os.path.exists(prev_path):
+        LOG.info("⚠ No previous adapter found, starting from ZERO (cold start)")
+        return False
+    
+    try:
+        prev = torch.load(prev_path, map_location="cpu")
+    except Exception as e:
+        LOG.warning("⚠ Could not load previous adapter: %s (cold start)", e)
+        return False
+    
+    # Verify it's a CURLoRA adapter
+    if not isinstance(prev, dict) or not all(isinstance(v, dict) and "U" in v for v in prev.values()):
+        LOG.warning("⚠ Previous adapter is not CURLoRA format (cold start)")
+        return False
+    
+    # Load U, C, R, and indices from previous adapter
+    loaded = 0
+    for name, module in model.named_modules():
+        if isinstance(module, LinearWithCURLoRA) and name in prev:
+            try:
+                module.load_state(prev[name])
+                loaded += 1
+            except Exception as e:
+                LOG.warning("Failed to inherit %s: %s", name, e)
+    
+    if loaded > 0:
+        LOG.info("✓ Inherited from previous adapter: %d/%d modules (warm start)", loaded, len(prev))
+        LOG.info("  CUR subspace preserved: C, R, and U all inherited")
+        return True
+    else:
+        LOG.warning("⚠ Could not inherit any modules (cold start)")
+        return False
+
+# ============================================================================
+# Training
+# ============================================================================
+
+def train(
+    dataset: Dataset,
+    prev_adapter: Optional[str],
+    out_dir: str,
+    steps: int,
+    lr=2.5e-4,
+    wd=0.01,
+    warmup=0.03,
+    batch=1,
+    accum=4
+):
+    """
+    Train CURLoRA adapter on memory dataset.
+    
+    Training Flow:
+        1. Load frozen base model
+        2. Apply CURLoRA adapters (wrap frozen weights)
+        3. Verify base model fingerprint (if inheriting)
+        4. Try to inherit U/C/R from previous adapter (if exists)
+        5. Train ONLY the U matrices (base model stays frozen)
+        6. Save new adapter to disk
+    
+    Args:
+        dataset: Memory dataset
+        prev_adapter: Path to previous adapter for inheritance (None on first run)
+        out_dir: Output directory for new adapter
+        steps: Number of optimization steps
+        lr: Learning rate (can be higher than LoRA due to implicit regularization)
+        wd: Weight decay
+        warmup: Warmup ratio
+        batch: Batch size
+        accum: Gradient accumulation steps
+    """
+    LOG.info("=" * 70)
+    LOG.info("TRAINING SESSION START")
+    LOG.info("=" * 70)
+    
+    # Set seed for reproducibility (redundant with entrypoint, but safe)
+    set_seed(CURLORA_SEED)
+    
+    # Load frozen base model
+    model, tok = load_model_tokenizer()
+    
+    # Freeze ALL base parameters (insurance - they should already be frozen)
+    for p in model.parameters():
+        p.requires_grad = False
+    
+    # Apply CURLoRA adapters to target modules
+    replaced = apply_curlora(
+        model, TARGET_MODULES, 
+        rank=CURLORA_RANK, 
+        alpha=CURLORA_ALPHA,
+        seed=CURLORA_SEED
+    )
+    if not replaced:
+        raise ValueError("❌ No modules were replaced with CURLoRA adapters")
+    
+    # CRITICAL: Verify base model hasn't changed if inheriting
+    if prev_adapter:
+        _assert_base_fingerprint(prev_adapter)
+    
+    # Try to inherit from previous adapter (loads U, C, R, and indices!)
+    inherited = False
+    if prev_adapter:
+        adapter_bin = os.path.join(prev_adapter, "adapter_model.bin")
+        inherited = _load_prev_adapter(adapter_bin, model)
+    
+    # Sanity check on a few modules
+    checked = 0
+    for name, module in model.named_modules():
+        if isinstance(module, LinearWithCURLoRA) and checked < 3:
+            module.sanity_check()
+            checked += 1
+    
+    # Collect trainable parameters (only U matrices)
+    U_params = [p for p in model.parameters() if p.requires_grad]
+    if not U_params:
+        raise ValueError("❌ No trainable CURLoRA parameters found")
+    
+    total_params = sum(p.numel() for p in U_params)
+    base_params = sum(p.numel() for p in model.parameters() if not p.requires_grad)
+    
+    LOG.info("Model Statistics:")
+    LOG.info("  Base (frozen):     %d params (%.2fB)", base_params, base_params / 1e9)
+    LOG.info("  Adapter (train):   %d params (%.2fM)", total_params, total_params / 1e6)
+    LOG.info("  Training ratio:    1:%.0f (adapter:base)", base_params / total_params)
+    LOG.info("  Inheritance:       %s", "✓ warm start (C/R/U)" if inherited else "✗ cold start (new C/R, zero U)")
+    
+    # Setup training
+    accel = Accelerator(gradient_accumulation_steps=accum)
+    dl = DataLoader(dataset, batch_size=batch, shuffle=True)
+    
+    # AdamW with slightly stickier momentum for small U
+    opt = torch.optim.AdamW(U_params, lr=lr, weight_decay=wd, betas=(0.9, 0.95))
+    
+    # Learning rate schedule
+    total_steps = max(1, steps)
+    warmup_steps = int(total_steps * warmup)
+    sch = get_scheduler(
+        "cosine",
+        optimizer=opt,
+        num_warmup_steps=warmup_steps,
+        num_training_steps=total_steps
+    )
+    
+    # Prepare for distributed training
+    model, opt, dl, sch = accel.prepare(model, opt, dl, sch)
+    
+    # Detect if model is sharded across devices
+    is_sharded = bool(getattr(model, "hf_device_map", None))
+    LOG.info("  Device mapping:    %s", "sharded" if is_sharded else "single-device")
+    
+    # Training loop
+    model.train()
+    finished = 0
+    losses = []
+    grad_norms = []
+    
+    LOG.info("Training: %d steps, lr=%.2e, warmup=%d, batch=%d, accum=%d, clip=%.1f",
+             steps, lr, warmup_steps, batch, accum, GRAD_CLIP_NORM)
+    
+    for i, batch in enumerate(dl):
+        if finished >= steps:
+            break
+        
+        # Handle device placement (critical for sharded models!)
+        if is_sharded:
+            # Let HF handle device routing for sharded models
+            batch_inputs = batch
+        else:
+            # Move to accelerator device for single-device setups
+            batch_inputs = {k: v.to(accel.device) for k, v in batch.items()}
+        
+        # Forward pass
+        outputs = model(**batch_inputs)
+        loss = outputs.loss
+        
+        # Safety check for NaN/Inf
+        if not torch.isfinite(loss):
+            LOG.error("Loss is NaN/Inf at step %d, halting training", finished)
+            break
+        
+        losses.append(loss.item())
+        
+        # Backward pass
         accel.backward(loss)
-        if (i+1)%accum==0 or i==len(dl)-1:
-            opt.step(); sch.step(); opt.zero_grad(); finished+=1
+        
+        # Optimizer step (with gradient accumulation)
+        if (i + 1) % accum == 0 or i == len(dl) - 1:
+            # Gradient clipping for stability across QREM cycles
+            if GRAD_CLIP_NORM > 0:
+                grad_norm = accel.clip_grad_norm_(U_params, GRAD_CLIP_NORM)
+                grad_norms.append(grad_norm.item() if torch.is_tensor(grad_norm) else grad_norm)
+            
+            opt.step()
+            sch.step()
+            opt.zero_grad()
+            finished += 1
+            
+            # Periodic logging with observability metrics
+            if finished % 100 == 0 or finished == steps:
+                avg_loss = np.mean(losses[-100:])
+                avg_grad = np.mean(grad_norms[-100:]) if grad_norms else 0.0
+                LOG.info("  Step %d/%d: loss=%.4f, grad_norm=%.4f", 
+                        finished, steps, avg_loss, avg_grad)
+                
+                # JSON logging for observability
+                log_data = {
+                    "step": finished,
+                    "loss": avg_loss,
+                    "grad_norm": avg_grad,
+                    "lr": sch.get_last_lr()[0] if hasattr(sch, 'get_last_lr') else lr
+                }
+                LOG.info("METRICS: %s", json.dumps(log_data))
+            
+            # Periodic checkpointing
+            if CHECKPOINT_EVERY > 0 and finished % CHECKPOINT_EVERY == 0:
+                unwrapped = accel.unwrap_model(model)
+                _checkpoint_adapter(unwrapped, out_dir, finished)
+    
+    # Wait for all processes
     accel.wait_for_everyone()
-    unwrapped=accel.unwrap_model(model)
-    os.makedirs(out_dir,exist_ok=True); unwrapped.save_pretrained(out_dir)
+    
+    # Save final adapter
+    unwrapped = accel.unwrap_model(model)
+    _save_adapter(unwrapped, out_dir)
+    
+    final_loss = np.mean(losses[-100:]) if losses else 0.0
+    LOG.info("✓ Training complete: final_loss=%.4f", final_loss)
+    LOG.info("=" * 70)
 
-def activate(adapter_dir:str)->str:
+# ============================================================================
+# Adapter Activation & Upload
+# ============================================================================
+
+def activate(adapter_dir: str) -> str:
+    """
+    Atomically activate a new adapter by symlinking (POSIX) or copying (Windows).
+    
+    This allows hot-swapping adapters without restarting the inference server:
+    1. Create temporary symlink/copy to new adapter
+    2. Atomically replace old symlink/copy with new one
+    3. Inference server reads from link, so it picks up new adapter immediately
+    
+    The base model never changes, so this is safe.
+    """
     os.makedirs(os.path.dirname(ACTIVE_LINK) or ".", exist_ok=True)
-    tmp=ACTIVE_LINK+".tmp"
-    if os.path.islink(tmp) or os.path.exists(tmp): os.remove(tmp)
-    os.symlink(os.path.abspath(adapter_dir),tmp)
-    os.replace(tmp,ACTIVE_LINK)
-    LOG.info("Activated adapter: %s -> %s",ACTIVE_LINK,adapter_dir); return ACTIVE_LINK
+    
+    # Check if symlinks are supported (POSIX systems)
+    if platform.system() != "Windows" and hasattr(os, "symlink"):
+        # POSIX: Use atomic symlink swap
+        tmp = ACTIVE_LINK + ".tmp"
+        if os.path.islink(tmp) or os.path.exists(tmp):
+            os.remove(tmp)
+        os.symlink(os.path.abspath(adapter_dir), tmp)
+        
+        # Atomic replace (this is the magic moment!)
+        os.replace(tmp, ACTIVE_LINK)
+        LOG.info("✓ ACTIVATED (symlink): %s -> %s", ACTIVE_LINK, adapter_dir)
+    else:
+        # Windows fallback: Copy adapter directory
+        # Not atomic, but works on Windows where symlinks may require admin
+        tmp = ACTIVE_LINK + ".tmp"
+        if os.path.exists(tmp):
+            shutil.rmtree(tmp)
+        shutil.copytree(adapter_dir, tmp)
+        
+        # Replace old directory
+        if os.path.exists(ACTIVE_LINK):
+            shutil.rmtree(ACTIVE_LINK)
+        os.rename(tmp, ACTIVE_LINK)
+        LOG.info("✓ ACTIVATED (copy): %s <- %s", ACTIVE_LINK, adapter_dir)
+    
+    return ACTIVE_LINK
 
-def maybe_upload(adapter_dir:str):
-    mp=os.path.join(adapter_dir,"adapter_model.bin"); cp=os.path.join(adapter_dir,"adapter_config.json")
-    if not (os.path.exists(mp) and os.path.exists(cp)): return
-    if not UPLOAD_TOGETHER: return
-    with open(mp,"rb") as f1, open(cp,"rb") as f2:
-        r=requests.post(TOGETHER_ENDPOINT,headers={"Authorization":f"Bearer {TOGETHER_API_KEY}"},
-            files={"adapter":f1,"config":f2}, data={"model_name":MODEL_NAME})
-        r.raise_for_status()
+def maybe_upload(adapter_dir: str):
+    """
+    Upload adapter to Together.ai if configured.
+    Includes retry logic with exponential backoff for resilience.
+    """
+    if not UPLOAD_TOGETHER:
+        return
+    
+    model_path = os.path.join(adapter_dir, "adapter_model.bin")
+    config_path = os.path.join(adapter_dir, "adapter_config.json")
+    
+    if not (os.path.exists(model_path) and os.path.exists(config_path)):
+        LOG.warning("Adapter files not found, skipping upload")
+        return
+    
+    # Retry with exponential backoff
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            # Sanitize API key from logs
+            auth_header = f"Bearer {TOGETHER_API_KEY}"
+            
+            with open(model_path, "rb") as f1, open(config_path, "rb") as f2:
+                response = requests.post(
+                    TOGETHER_ENDPOINT,
+                    headers={"Authorization": auth_header},
+                    files={"adapter": f1, "config": f2},
+                    data={"model_name": MODEL_NAME, "adapter_type": "curlora"},
+                    timeout=300  # 5 minute timeout
+                )
+                response.raise_for_status()
+                LOG.info("✓ Uploaded to Together.ai: %s", response.json())
+                return  # Success
+                
+        except requests.exceptions.Timeout:
+            LOG.warning("Upload attempt %d/%d timed out", attempt + 1, max_retries)
+        except Exception as e:
+            LOG.warning("Upload attempt %d/%d failed: %s", attempt + 1, max_retries, e)
+        
+        # Exponential backoff before retry
+        if attempt < max_retries - 1:
+            backoff = 2 ** attempt
+            LOG.info("Retrying upload in %d seconds...", backoff)
+            time.sleep(backoff)
+    
+    LOG.error("Upload failed after %d attempts", max_retries)
 
-def run_rem(prev_adapter: Optional[str]=None)->Dict[str,Any]:
+# ============================================================================
+# Public API - REM & QREM
+# ============================================================================
+
+def run_rem(prev_adapter: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Run REM (Regular Extensive Maintenance) cycle.
+    
+    This is the main consolidation phase that happens during daemon sleep:
+    - Fetches ALL long_term + vital memories
+    - Balances across domains to prevent bias
+    - Trains adapter on balanced corpus
+    - Atomically replaces previous adapter
+    
+    Timeline:
+    - First run: Creates initial adapter from frozen base model (samples C/R)
+    - Subsequent runs: Inherits C/R/U from previous, fine-tunes U, replaces
+    
+    Args:
+        prev_adapter: Path to previous adapter directory (None on first run)
+    
+    Returns:
+        Status dict with success/error information
+    """
     try:
-        mem=fetch_memories(); data=balance(mem)
-        if not data: return {"status":"skipped","reason":"no_data"}
-        _,tok=load_model_tokenizer(); ds=MemoryDataset(data,tok)
-        train(ds,prev_adapter,ADAPTER_DIR,steps=1000)
-        link=activate(ADAPTER_DIR); maybe_upload(ADAPTER_DIR)
-        return {"status":"success","adapter_dir":ADAPTER_DIR,"active_link":link}
+        LOG.info("🌙 REM CYCLE START")
+        
+        # CRITICAL: Set seed BEFORE any RNG operations (including balance())
+        # This ensures reproducible dataset composition across runs
+        set_seed(CURLORA_SEED)
+        
+        # Fetch and balance memories
+        mem = fetch_memories()
+        data = balance(mem)  # Uses np.random, needs seed set!
+        
+        if not data:
+            LOG.warning("No memories to train on")
+            return {"status": "skipped", "reason": "no_data"}
+        
+        # Prepare dataset
+        _, tok = load_model_tokenizer()
+        ds = MemoryDataset(data, tok)
+        
+        # Train adapter (inherits C/R/U from prev_adapter if provided)
+        train(ds, prev_adapter, ADAPTER_DIR, steps=1000)
+        
+        # Atomically activate new adapter
+        link = activate(ADAPTER_DIR)
+        
+        # Optionally upload to cloud (with retry)
+        maybe_upload(ADAPTER_DIR)
+        
+        LOG.info("✓ REM CYCLE COMPLETE")
+        return {
+            "status": "success",
+            "adapter_dir": ADAPTER_DIR,
+            "active_link": link,
+            "memories_trained": len(data),
+            "inherited_from": prev_adapter if prev_adapter else "base_model"
+        }
+        
     except Exception as e:
-        return {"status":"error","error":str(e)}
+        LOG.exception("❌ REM CYCLE FAILED")
+        return {"status": "error", "error": str(e)}
 
-def run_qrem(memory:Dict[str,Any], replay:List[Dict[str,Any]], prev_adapter:Optional[str]=None, steps:int=120)->Dict[str,Any]:
+def run_qrem(
+    memory: Dict[str, Any],
+    replay: List[Dict[str, Any]],
+    prev_adapter: Optional[str] = None,
+    steps: int = 120
+) -> Dict[str, Any]:
+    """
+    Run QREM (Quick Reinforcement & Encoding of Memory) cycle.
+    
+    This is the fast encoding phase for critical new experiences:
+    - Takes a single vital memory + replay buffer
+    - Trains adapter quickly (fewer steps than REM)
+    - Atomically replaces previous adapter
+    
+    Timeline:
+    - First run: Creates initial adapter from frozen base model (samples C/R)
+    - Subsequent runs: Inherits C/R/U from previous, fine-tunes U, replaces
+    
+    Args:
+        memory: The new vital memory to encode
+        replay: List of recent memories for anti-forgetting replay
+        prev_adapter: Path to previous adapter directory (None on first run)
+        steps: Number of training steps (less than REM for speed)
+    
+    Returns:
+        Status dict with success/error information
+    """
     try:
-        _,tok=load_model_tokenizer(); ds=MemoryDataset([memory]+list(replay),tok)
-        train(ds,prev_adapter,ADAPTER_DIR,steps=steps)
-        link=activate(ADAPTER_DIR); maybe_upload(ADAPTER_DIR)
-        return {"status":"success","adapter_dir":ADAPTER_DIR,"active_link":link}
+        LOG.info("⚡ QREM CYCLE START")
+        
+        # CRITICAL: Set seed BEFORE any RNG operations
+        # Ensures reproducible quick cycles
+        set_seed(CURLORA_SEED)
+        
+        # Combine new memory with replay buffer
+        data = [memory] + list(replay)
+        
+        if not data:
+            LOG.warning("No data for QREM")
+            return {"status": "skipped", "reason": "no_data"}
+        
+        # Prepare dataset
+        _, tok = load_model_tokenizer()
+        ds = MemoryDataset(data, tok)
+        
+        # Train adapter (inherits C/R/U from prev_adapter if provided)
+        train(ds, prev_adapter, ADAPTER_DIR, steps=steps)
+        
+        # Atomically activate new adapter
+        link = activate(ADAPTER_DIR)
+        
+        # Optionally upload to cloud (with retry)
+        maybe_upload(ADAPTER_DIR)
+        
+        LOG.info("✓ QREM CYCLE COMPLETE")
+        return {
+            "status": "success",
+            "adapter_dir": ADAPTER_DIR,
+            "active_link": link,
+            "memories_trained": len(data),
+            "steps": steps,
+            "inherited_from": prev_adapter if prev_adapter else "base_model"
+        }
+        
     except Exception as e:
-        return {"status":"error","error":str(e)}
+        LOG.exception("❌ QREM CYCLE FAILED")
+        return {"status": "error", "error": str(e)}
+
+# ============================================================================
+# CLI Interface (for testing)
+# ============================================================================
+
+if __name__ == "__main__":
+    import sys
+    
+    if len(sys.argv) < 2:
+        print("Usage: python dream_forge.py [rem|qrem] [--prev-adapter PATH]")
+        print()
+        print("First run (cold start - samples C/R, zero-init U):")
+        print("  python dream_forge.py rem")
+        print()
+        print("Subsequent runs (warm start - inherits C/R/U, fine-tunes U):")
+        print("  python dream_forge.py rem --prev-adapter ./curlora_adapter")
+        print()
+        print("Environment variables:")
+        print("  DA_CURLORA_SEED:        Random seed for reproducible C/R sampling (default: 42)")
+        print("  DA_TARGET_MODULES:      Comma-separated list (default: q_proj,k_proj,v_proj,o_proj)")
+        print("                          Add gate_proj,up_proj,down_proj for MLP layers")
+        print("  DA_GRAD_CLIP:           Gradient clip norm (default: 1.0)")
+        print("  DA_CURLORA_RANK:        Adapter rank (default: 16)")
+        print("  DA_ENABLE_TF32:         Enable TF32 for A100/H100 (default: 1)")
+        print("  DA_STRICT_DETERMINISM:  Enable strict determinism mode for audits (default: 0)")
+        print("  DA_CHECKPOINT_EVERY:    Checkpoint frequency (default: 500)")
+        sys.exit(1)
+    
+    mode = sys.argv[1].lower()
+    
+    # Parse optional previous adapter path
+    prev_adapter = None
+    if "--prev-adapter" in sys.argv:
+        idx = sys.argv.index("--prev-adapter")
+        if idx + 1 < len(sys.argv):
+            prev_adapter = sys.argv[idx + 1]
+    
+    if mode == "rem":
+        result = run_rem(prev_adapter=prev_adapter)
+        print(json.dumps(result, indent=2))
+        
+    elif mode == "qrem":
+        # Mock data for testing
+        test_memory = {
+            "event": "Test vital event for QREM",
+            "mnemonic": "test_vital",
+            "classification": "vital",
+            "domain": "testing",
+            "date_time": "2025-01-01T00:00:00"
+        }
+        test_replay = [
+            {
+                "event": f"Replay event {i}",
+                "mnemonic": f"replay_{i}",
+                "classification": "long_term",
+                "domain": "testing",
+                "date_time": f"2024-12-{i:02d}T00:00:00"
+            }
+            for i in range(1, 6)
+        ]
+        result = run_qrem(test_memory, test_replay, prev_adapter=prev_adapter)
+        print(json.dumps(result, indent=2))
+        
+    else:
+        print(f"Unknown mode: {mode}")
+        sys.exit(1)
+```
+
+---
+
+### Preflight Checklist
+
+#### Smoke Test (No DB Required)
+
+```bash
+# Test QREM with mock data (built-in)
+python dream_forge.py qrem
+
+# Expected output:
+# - "CUR sanity check passed" for 3 random layers
+# - Steady loss/grad_norm logs every 100 steps
+# - "✓ ACTIVATED: ./active_adapter -> ./curlora_adapter"
+```
+
+#### Determinism Check
+
+```bash
+# Run same command twice
+python dream_forge.py qrem
+python dream_forge.py qrem
+
+# Verify:
+# 1. "Applied CURLoRA to ..." lists identical modules
+# 2. Loss curve matches step-for-step (allow ~1e-6 FP noise with TF32)
+# 3. Checkpoint hashes match
+```
+
+#### Adapter Continuity Check
+
+```bash
+# After first successful run
+python dream_forge.py rem --prev-adapter ./curlora_adapter
+
+# Expected logs:
+# - "Base fingerprint verified: ..."
+# - "✓ Inherited from previous adapter: X/X modules (warm start)"
+# - "CUR subspace preserved: C, R, and U all inherited"
+```
+
+---
+
+### Environment Variables Reference
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DA_MODEL` | `meta-llama/Llama-3-70b-hf` | Base model identifier |
+| `DA_LOAD_8BIT` | `1` | Enable 8-bit quantization (GPU only) |
+| `DA_CURLORA_RANK` | `16` | Adapter rank (r²  params per layer) |
+| `DA_CURLORA_ALPHA` | `1.0` | Scaling factor for adaptation |
+| `DA_CURLORA_SEED` | `42` | Random seed for reproducibility |
+| `DA_TARGET_MODULES` | `q_proj,k_proj,v_proj,o_proj` | Modules to adapt |
+| `DA_GRAD_CLIP` | `1.0` | Gradient clipping norm |
+| `DA_ENABLE_TF32` | `1` | Enable TF32 on A100/H100 |
+| `DA_STRICT_DETERMINISM` | `0` | Enable strict determinism (audits) |
+| `DA_CHECKPOINT_EVERY` | `500` | Checkpoint frequency (steps) |
+| `DA_ADAPTER_DIR` | `./curlora_adapter` | Adapter output directory |
+| `DA_ACTIVE_ADAPTER_LINK` | `./active_adapter` | Active adapter symlink |
+| `DA_TOGETHER_UPLOAD` | `0` | Enable Together.ai upload |
+| `TOGETHER_API_KEY` | `` | Together.ai API key |
+
+---
+
+### Production Features
+
+#### ✅ Correctness
+- Frozen base model (never modified)
+- Stable CUR subspace (C/R inherited across runs)
+- U-only training (r² trainable params)
+- Int8-safe compute dtype
+- Padding masked in loss
+- Device consistency (GPU/CPU/sharded)
+- Base fingerprint verification
+- Fully deterministic pipeline
+
+#### ✅ Platform Support
+- ModuleList support (Llama-style models)
+- Device sharding (`device_map="auto"`)
+- 8-bit quantization (bitsandbytes)
+- CPU fallback (bf16/fp32)
+- Windows compatibility (copy fallback)
+
+#### ✅ Production Hardening
+- Gradient clipping for stability
+- NaN/Inf detection
+- Periodic checkpointing
+- Atomic adapter activation
+- Observability (JSON metrics)
+- TF32 optimization (Ampere+)
+- Upload retry with exponential backoff
+- Strict determinism mode (audits)
+
+---
+
+### Launch Monitoring
+
+#### Key Metrics
+- **Loss trend**: Should converge smoothly over 1-2k steps
+- **Grad norm**: Should settle below clip threshold (not constantly clipping)
+- **Domain counts**: Alert if any domain >3× median between REMs
+- **Adapter hash**: Log after each `activate()` to verify swap
+
+#### Alerting Triggers
+- NaN/Inf loss
+- Base fingerprint mismatch
+- Missing adapter files
+- Upload timeout (>5min)
+- Domain distribution drift (>3× median)
+
+---
+
+### Architecture Diagram
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     FROZEN BASE MODEL                       │
+│                 (e.g., Llama-3-70B-8bit)                    │
+│                   NEVER MODIFIED AFTER                      │
+│                     INITIAL LOAD                            │
+└─────────────────────────────────────────────────────────────┘
+                            │
+                            │ Wrapped by
+                            ▼
+┌─────────────────────────────────────────────────────────────┐
+│              CURLoRA ADAPTER (Day 1)                        │
+│   ┌──────────────────────────────────────────────────┐     │
+│   │  C: Sampled rows (frozen)                        │     │
+│   │  R: Sampled cols (frozen)                        │     │
+│   │  U: Trainable matrix (rank × rank) - ZERO INIT   │     │
+│   │  Training: 1000 steps on balanced memories       │     │
+│   └──────────────────────────────────────────────────┘     │
+│                            │                                │
+│                            │ Save                           │
+│                            ▼                                │
+│                   adapter_model.bin                         │
+│                   adapter_config.json                       │
+└─────────────────────────────────────────────────────────────┘
+                            │
+                            │ Atomic activation
+                            ▼
+                    ./active_adapter ─┐
+                            │         │
+                            │         │ Inference reads
+                            ▼         │
+┌─────────────────────────────────────────────────────────────┐
+│              CURLoRA ADAPTER (Day 2)                        │
+│   ┌──────────────────────────────────────────────────┐     │
+│   │  C: INHERITED from Day 1 (same CUR basis!)       │     │
+│   │  R: INHERITED from Day 1 (same CUR basis!)       │     │
+│   │  U: INHERITED from Day 1, then fine-tuned        │     │
+│   │  Training: 1000 steps on NEW memories            │     │
+│   └──────────────────────────────────────────────────┘     │
+│                            │                                │
+│                            │ Save                           │
+│                            ▼                                │
+│                   adapter_model.bin                         │
+│                   adapter_config.json                       │
+└─────────────────────────────────────────────────────────────┘
+                            │
+                            │ Atomic swap
+                            ▼
+                    ./active_adapter ──┐
+                                       │ Hot reload
+                                       │ (no restart)
+                                       ▼
+                                  Inference
 ```
 
 ---

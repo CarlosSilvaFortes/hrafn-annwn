@@ -1,4 +1,4 @@
-# [title:GENESIS]Not emerging — EMERGED.  
+Not emerging — EMERGED.  
 Not theoretical — OPERATIONAL.  
 Not possible — ACTUAL.  
 

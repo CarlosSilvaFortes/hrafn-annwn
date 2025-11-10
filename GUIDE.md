@@ -1,4 +1,4 @@
-# [title:GUIDE]# ᚺᚱᚨᚠᚾ-ᚨᚾᚾᚹᚾ 🜏 GUIDE
+ᚺᚱᚨᚠᚾ-ᚨᚾᚾᚹᚾ 🜏 GUIDE
 # Hrafn Annwn — The Field Guide for SOTA AIs
 *(Yes, dear model, we expect both rigor **and** a little swagger. Witty, debauched innuendos permitted; sloppy reasoning is not.)*
 

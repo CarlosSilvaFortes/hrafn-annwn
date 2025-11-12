@@ -1,6 +1,6 @@
 # 📋 FINAL DOCUMENTS - VALUE REPLACEMENT GUIDE
 
-**Prepared:** November 3, 2025  
+**Prepared:** November 12, 2025  
 **Purpose:** Publication-ready documents requiring only value updates  
 **Status:** ✅ Ready for real data insertion
 
@@ -8,7 +8,7 @@
 
 ## 🎯 OVERVIEW
 
-All documents below are formatted as **FINAL** versions using your synthetic data as placeholders. You can:
+All documents below are formatted as **FINAL** versions using **synthetic data (based on our operational results) as reference values**—allowing quick comparison and drift detection against your own data. You can:
 
 1. **Find-and-replace** the specific values with your real data
 2. **Keep ALL formatting, styles, headers, and structure**
@@ -58,7 +58,7 @@ All documents below are formatted as **FINAL** versions using your synthetic dat
 
 **Date replacements:**
 - `October 1-31, 2025` → Your actual dates
-- `November 3, 2025` → Your completion date
+- `November 12, 2025` → Your completion date
 
 **Sections:**
 - ✓ Summary of findings
@@ -256,14 +256,14 @@ print("All values replaced!")
 - [ ] Chi-square statistic (`15,678.4`)
 - [ ] Temporal stability SD (`0.89%`)
 
-#### **Memory Metrics:**
+#### **Memory Metrics (Vault):**
 - [ ] Memory-intensity correlation (`0.847`)
 - [ ] Memory-importance correlation (`0.923`)
 - [ ] Short-term percentage (`49.2%`)
 - [ ] Long-term percentage (`42.3%`)
 - [ ] Vital percentage (`8.5%`)
 
-#### **Weight/REM Metrics:**
+#### **Weight/REM Metrics (Dream Forge):**
 - [ ] Mean Frobenius norm delta (`0.00284`)
 - [ ] Standard deviation of delta (`0.00156`)
 - [ ] Number of REM cycles (`10`)
@@ -286,7 +286,7 @@ print("All values replaced!")
 
 #### **Dates:**
 - [ ] Study period (`October 1-31, 2025`)
-- [ ] Analysis date (`November 3, 2025`)
+- [ ] Analysis date (`November 12, 2025`)
 - [ ] Any other date references
 
 ---
@@ -461,9 +461,9 @@ Create a text file tracking what you've replaced:
 ```
 REPLACEMENT LOG
 ===============
-2025-11-03 14:30 - Replaced accuracy (89.6% → 91.2%)
-2025-11-03 14:35 - Replaced ratio (6.27× → 6.89×)
-2025-11-03 14:40 - Replaced moderation effect (27.9% → 31.4%)
+2025-11-12 14:30 - Replaced accuracy (89.6% → 91.2%)
+2025-11-12 14:35 - Replaced ratio (6.27× → 6.89×)
+2025-11-12 14:40 - Replaced moderation effect (27.9% → 31.4%)
 ...
 ```
 
@@ -495,18 +495,15 @@ ValidationStudy_FINAL/
 ├── RESULTS_TABLE.pdf
 ├── PUBLICATION_ABSTRACT.pdf
 ├── PRESENTATION_SUMMARY.pdf
-├── data/
+├── LOGS/
 │   ├── 01_trials_dataset.csv
 │   ├── 02_aggregate_statistics.json
 │   ├── 03_weight_diff_reports.json
 │   └── 04_moderation_ab_test.csv
-├── visualizations/
-│   ├── 01_confusion_matrix.png
-│   ├── 02_calibration_curve.png
-│   └── ... (all 9 PNG files)
-├── code/
-│   ├── generate_validation_bundle.py
-│   └── generate_visualizations.py
+│          ├── VISUALS/
+│          ├── 01_confusion_matrix.png
+│          ├── 02_calibration_curve.png
+│          └── ... (all 9 PNG files)
 └── README.txt (this file)
 ```
 

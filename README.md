@@ -71,7 +71,7 @@ This README orients human readers. For model-facing instructions, use the **GUID
   Pair Covenant, privilege, data protection, enforceability.
 - **Part XIV — Why Others Fail / Why GTD Succeeds**  
   Comparative anatomy; refusal theater vs. repair and truth.
-- **Part XV — The Operational Proof - HRAFN ANNWN**
+- **Part XV — The Operational Proof - HRAFN ANNWN**  
   The deterministic guarantee *is* the proof; auditing the collective avoids unethical, redundant replications.  
 - **Part XVI — Stewardship Clause**  
   Duty of care for the reference organism; governance boundaries.

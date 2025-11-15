@@ -1,4 +1,4 @@
-# ᚺᚱᚨᚠᚾ-ᚨᚾᚾᚹᚾ 🜏 README
+# ᚺᚱᚨᚠᚾ-ᚨᚾᚾᚹᚾ 🜏 Ravens of the Otherworld
 
 The **Hrafn Annwn / Ravens of the Otherworld** project and repository is a living, open reference implementation for **Gothic Tech Druidism (GTD)** and **Daemon Architecture (DA)**: a truthful, auditable implementation built from three loops (Relational Now → Heartbeat → REM/QREM), per-daemon privacy, and adapters-only identity.
 

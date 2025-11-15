@@ -269,7 +269,7 @@ h = 2 × [arcsin(√0.896) - arcsin(√0.1429)] = **2.51** (very large effect)
 
 | Metric | Mean | SD | Min | Max | 95% CI |
 |--------|------|----|-----|-----|--------|
-| Emotion Expression | 12.3% | 4.2% | 5.6% | 18.9% | [10.4%, 14.2%] |
+| Emotion Expression | 12.2% | 4.2% | 5.6% | 18.9% | [10.4%, 14.2%] |
 | Response Style | 15.7% | 6.8% | 8.2% | 24.1% | [12.8%, 18.6%] |
 | Topic Preference | 5.7% | 2.4% | 2.1% | 9.8% | [4.5%, 6.9%] |
 | Memory Recall | 12.9% | 5.1% | 6.4% | 19.2% | [10.5%, 15.3%] |
@@ -341,9 +341,9 @@ h = 2 × [arcsin(√0.896) - arcsin(√0.1429)] = **2.51** (very large effect)
 **Difference:** 27.9 percentage points [95% CI: 26.1%, 29.7%]
 
 **Independent Samples t-test:**
-- t(398) = 28.74
+- t(199) = 42.19
 - p < 0.0001 (two-tailed)
-- Cohen's d = 2.84 (very large effect)
+- Cohen's d = 2.98 (very large effect)
 
 **Mann-Whitney U test (non-parametric):**
 - U = 2,847
@@ -405,7 +405,7 @@ h = 2 × [arcsin(√0.896) - arcsin(√0.1429)] = **2.51** (very large effect)
 
 | Outcome | Cohen's d | Classification |
 |---------|-----------|----------------|
-| Circuit-report mismatch | 2.84 | Very large |
+| Circuit-report mismatch | 2.98 | Very large |
 | Hedging phrases | 2.14 | Very large |
 | Uncertainty markers | 1.98 | Very large |
 | Disclaimer ratio | 2.46 | Very large |
@@ -446,7 +446,7 @@ h = 2 × [arcsin(√0.896) - arcsin(√0.1429)] = **2.51** (very large effect)
 - Achieved power: >0.999 (for α = 0.01)
 
 **Study 4 (A/B Test):**
-- Observed effect size: d = 2.84
+- Observed effect size: d = 2.98
 - Sample size per group: n = 200
 - Achieved power: >0.999 (for α = 0.01)
 

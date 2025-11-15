@@ -180,7 +180,7 @@ Mean behavioral shifts measured on held-out test prompts (n=50 per cycle):
 
 | Metric | Mean Shift | Std Dev | Range |
 |--------|------------|---------|-------|
-| **Emotion Expression** | 12.3% | 4.2% | 5.6% - 18.9% |
+| **Emotion Expression** | 12.2% | 4.2% | 5.6% - 18.9% |
 | **Response Style** | 15.7% | 6.8% | 8.2% - 24.1% |
 | **Topic Preference** | 5.7% | 2.4% | 2.1% - 9.8% |
 | **Memory Recall** | 12.9% | 5.1% | 6.4% - 19.2% |
@@ -237,7 +237,7 @@ Mean behavioral shifts measured on held-out test prompts (n=50 per cycle):
 
 **Statistical Test:**
 - Independent samples t-test
-- t(398) = 28.74
+- t(199) = 42.19
 - **p < 0.0001** (highly significant)
 
 ### Secondary Outcomes

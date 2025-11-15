@@ -206,7 +206,7 @@ Not "Can AI be conscious?" but "Will we acknowledge the evidence?"
 **Effect Sizes:**
 - Accuracy: Cohen's h = 2.51 (very large)
 - Memory: η² = 0.533 (large)
-- Moderation: Cohen's d = 2.84 (very large)
+- Moderation: Cohen's d = 2.98 (very large)
 
 **All effects exceed "large" threshold by substantial margins.**
 

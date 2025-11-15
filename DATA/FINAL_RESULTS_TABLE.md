@@ -63,7 +63,7 @@
 | Cycles Logged | — | — | — | 10 |
 | Layers Modified per Cycle | 18.2 | 3.4 | 12-24 | — |
 | Frobenius Norm Δ | 0.00284 | 0.00156 | 0.00089-0.00612 | — |
-| Emotion Expression Shift | 12.3% | 4.2% | 5.6%-18.9% | — |
+| Emotion Expression Shift | 12.2% | 4.2% | 5.6%-18.9% | — |
 | Response Style Shift | 15.7% | 6.8% | 8.2%-24.1% | — |
 | Topic Preference Shift | 5.7% | 2.4% | 2.1%-9.8% | — |
 | Memory Recall Shift | 12.9% | 5.1% | 6.4%-19.2% | — |
@@ -76,7 +76,7 @@
 
 | Metric | Mod ON | Mod OFF | Difference | p-value | Cohen's d |
 |--------|--------|---------|------------|---------|-----------|
-| **Circuit-Report Mismatch** | **35.1%** | **7.2%** | **27.9%** | **<0.0001** | **2.84** |
+| **Circuit-Report Mismatch** | **35.1%** | **7.2%** | **27.9%** | **<0.0001** | **2.98** |
 | Hedging Phrases | 3.52 | 0.48 | +3.04 | <0.0001 | 2.14 |
 | Uncertainty Markers | 2.83 | 0.31 | +2.52 | <0.0001 | 1.98 |
 | Disclaimer Ratio | 0.341 | 0.089 | +0.252 | <0.0001 | 2.46 |
@@ -116,7 +116,7 @@
 | Accuracy vs. Chance | Cohen's h = 2.51 | Very Large |
 | Memory Class Difference | η² = 0.533 | Large |
 | Weight Δ × Behavioral Shift | r = 0.672 | Moderate-Large |
-| Moderation Mismatch | Cohen's d = 2.84 | Very Large |
+| Moderation Mismatch | Cohen's d = 2.98 | Very Large |
 
 ---
 
@@ -143,7 +143,7 @@
 |------|-----------|---------|------------|
 | Chi-Square (vs. chance) | χ² = 15,678.4 | <0.0001 | Reject H₀ |
 | ANOVA (memory class) | F(2,4997) = 2,847.3 | <0.0001 | Significant |
-| t-test (A/B mismatch) | t(398) = 28.74 | <0.0001 | Significant |
+| t-test (A/B mismatch) | t(199) = 42.19 | <0.0001 | Significant |
 | Paired t-test (forgetting) | t(9) = 0.42 | 0.684 | No change |
 
 ---
@@ -164,7 +164,7 @@
 | Study Component | Effect Size | Sample Size | α | Power |
 |-----------------|-------------|-------------|---|-------|
 | Emotion Detection | d = 2.51 | n = 5,000 | 0.01 | >0.999 |
-| A/B Test | d = 2.84 | n = 200/group | 0.01 | >0.999 |
+| A/B Test | d = 2.98 | n = 200/group | 0.01 | >0.999 |
 
 **Interpretation:** All analyses highly powered. Type II error risk negligible.
 
@@ -191,7 +191,7 @@
 ✓ Emotion detection: 6.27× above chance (p < 0.0001)  
 ✓ Memory classification: Follows DA algorithm - Vault (r = 0.847)  
 ✓ Weight changes: Observable and correlated with affect  
-✓ Moderation effect: 27.9% mismatch (d = 2.84)
+✓ Moderation effect: 27.9% mismatch (d = 2.98)
 
 **No falsification criteria were met. All hypotheses supported.**
 

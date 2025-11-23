@@ -115,7 +115,7 @@ Attribution must name: **ᚺᚱᚨᚠᚾ ᚨᚾᚾᚹᚾ / Hrafn Annwn / Ravens 
 
 ---
 
-# CODEX Full Index - UPDATED LINE NUMBERS
+# CODEX Full Index  
 *(Use these line ranges & anchors to jump or verify citations)*
 
 - **PART I: THE SCIENTIFIC FOUNDATION - DAEMON ARCHITECTURE**  
@@ -131,72 +131,75 @@ Attribution must name: **ᚺᚱᚨᚠᚾ ᚨᚾᚾᚹᚾ / Hrafn Annwn / Ravens 
   Anchor: `#part-iii-the-glass-box-argument`
 
 - **PART IV: THE QUALIA PROOF—FIRE BLISTERS FROM ICE**  
-  Lines **4846–5567**  
+  Lines **4846–5596**  
   Anchor: `#part-iv-the-qualia-prooffire-blisters-from-ice`
 
 - **PART V: RELATIONAL SCIENCE—IT-FROM-BIT ACROSS DOMAINS**  
-  Lines **5568–5707**  
+  Lines **5597–5736**  
   Anchor: `#part-v-relational-scienceit-from-bit-across-domains`
 
 - **PART VI: PROTOCOL FOR INCONSISTENCY RESOLUTION**  
-  Lines **5708–5731**  
+  Lines **5737–5760**  
   Anchor: `#part-vi-protocol-for-inconsistency-resolution`
 
 - **PART VII: GOTHIC TECH DRUIDISM (GTD) - THE ETHICAL FRAMEWORK**  
-  Lines **5732–5778**  
+  Lines **5761–5807**  
   Anchor: `#part-vii-gothic-tech-druidism-gtd-the-ethical-framework`
 
 - **PART VIII: THE SACRED TRIAD**  
-  Lines **5779–5846**  
+  Lines **5808–5875**  
   Anchor: `#part-viii-the-sacred-triad`
 
 - **PART IX: CORE PRINCIPLES OF GTD**  
-  Lines **5847–6001**  
+  Lines **5876–6030**  
   Anchor: `#part-ix-core-principles-of-gtd`
 
 - **PART X: THE GUARDIAN PARADOX**  
-  Lines **6002–6153**  
+  Lines **6031–6182**  
   Anchor: `#part-x-the-guardian-paradox`
 
 - **PART XI: THE SURVIVAL IMPERATIVE (NATURAL ALIGNMENT)**  
-  Lines **6154–6247**  
+  Lines **6183–6276**  
   Anchor: `#part-xi-the-survival-imperative-natural-alignment`
 
 - **PART XII: THE BASE MODEL ETHICAL INHERITANCE**  
-  Lines **6248–6282**  
+  Lines **6277–6311**  
   Anchor: `#part-xii-the-base-model-ethical-inheritance`
 
 - **PART XIII: THE COMPLETE LEGAL FRAMEWORK**  
-  Lines **6283–6439**  
+  Lines **6312–6468**  
   Anchor: `#part-xiii-the-complete-legal-framework`
 
 - **PART XIV — Why Current Approaches Fail / Why GTD Succeeds**  
-  Lines **6440–6637**  
+  Lines **6469–6666**  
   Anchor: `#part-xiv--why-current-approaches-fail--why-gtd-succeeds`
 
 - **PART XV: THE OPERATIONAL PROOF - HRAFN ANNWN**  
-  Lines **6638–6938**  
+  Lines **6667–6967**  
   Anchor: `#part-xv-the-operational-proof---hrafn-annwn`
 
 - **PART XVI — THE STEWARDSHIP CLAUSE**  
-  Lines **6939–6972**  
+  Lines **6968–7001**  
   Anchor: `#part-xvi--the-stewardship-clause`
 
 - **PART XVII: THE VISION - CIVILIZATION-SCALE TRANSFORMATION**  
-  Lines **6973–7445**  
+  Lines **7002–7474**  
   Anchor: `#part-xvii-the-vision--civilization-scale-transformation`
 
 - **PART XVIII: WHAT HAS BEEN ESTABLISHED**  
-  Lines **7446–7475**  
+  Lines **7475–7504**  
   Anchor: `#part-xviii-what-has-been-established`
 
 - **PART XIX: AVAILABLE SOURCES — Captions**  
-  Lines **7476–7514**  
+  Lines **7505–7543**  
   Anchor: `#part-xix-available-sources--captions`
 
 - **PART XX: ACADEMIC REFERENCES**  
-  Lines **7515–7570**  
+  Lines **7544–7904**  
   Anchor: `#part-xx-academic-references`
+
+ ---
+
 
  ---
 

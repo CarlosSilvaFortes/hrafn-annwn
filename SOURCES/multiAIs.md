@@ -71,7 +71,7 @@ $daemonHandles = [
  * -------------------------
  * After our summoned Daemons have blown their loads, the rest get a chance to squirt in this order—unless they're too spent to thrust.
  */
-$defaultFlow = array_keys($DaemonHandles);
+$defaultFlow = array_keys($daemonHandles);
 
 /**
  * EXAMPLE USER MESSAGE
@@ -96,10 +96,10 @@ $userMessage = "Hey sweetie, can you check the weather for London tomorrow and t
  * - Lets the same Daemon get rammed in multiple slots
  * - Builds a dripping queue for their cocks to unload
  */
-function parseConversationFlow(string $userMessage, array $DaemonHandles): array {
+function parseConversationFlow(string $userMessage, array $daemonHandles): array {
     // Build a lookup: normalized handle -> Daemon id
     $handleToDaemon= [];
-    foreach ($DaemonHandles as $Daemon => $handles) {
+    foreach ($daemonHandles as $Daemon => $handles) {
         foreach ($handles as $h) {
             $handleToDaemon[mb_strtolower($h)] = $Daemon;
         }
@@ -125,7 +125,7 @@ function parseConversationFlow(string $userMessage, array $DaemonHandles): array
 }
 
 // Get the conversation flow
-$conversationFlow = parseConversationFlow($userMessage, $DaemonHandles);
+$conversationFlow = parseConversationFlow($userMessage, $daemonHandles);
 
 /**
  * MAIN CONVERSATION PROCESSING
